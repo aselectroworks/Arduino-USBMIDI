@@ -23,7 +23,15 @@ SOFTWARE.
 #pragma once
 
 #include <MIDI.h>
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+#include <MIDIUSB_ESP32.h>
+#else
 #include <MIDIUSB.h>
+#define USB_MIDI_NUM_CABLES 1
+#if USB_MIDI_NUM_CABLES != 1
+#error "Currently MIDIUSB Library for Arduino does not support Multi Cable"
+#endif
+#endif
 
 #include "USB-MIDI_defs.h"
 #include "USB-MIDI_Namespace.h"
@@ -37,17 +45,28 @@ private:
     size_t mTxIndex;
     MidiType mTxStatus;
 
-    byte mRxBuffer[4];
-    size_t mRxLength;
-    size_t mRxIndex;
+    static byte mRxBuffer[USB_MIDI_NUM_CABLES][64];
+    static size_t mRxLength[USB_MIDI_NUM_CABLES];
+    static size_t mRxIndex[USB_MIDI_NUM_CABLES];
 
     midiEventPacket_t mPacket;
     uint8_t cableNumber;
-    
+    static uint8_t cableNumberTotal; 
+    static uint16_t cableNumberMask; 
+
 public:
-	usbMidiTransport(uint8_t cableNumber = 0)
+    ~usbMidiTransport() {
+
+    }
+    usbMidiTransport(uint8_t cableNumber = 0)
 	{
+        if  (cableNumber >= USB_MIDI_NUM_CABLES || cableNumberMask & (1 << cableNumber)) {
+            // Selected cable number is invalid
+            this->cableNumber = 0xFF; 
+        }
         this->cableNumber = cableNumber;
+        cableNumberTotal++; 
+        cableNumberMask |= (1 << cableNumber); 
 	};
 
 public:
@@ -57,8 +76,8 @@ public:
 	void begin()
 	{
         mTxIndex = 0;
-        mRxIndex = 0;
-        mRxLength = 0;
+        mRxIndex[cableNumber] = 0;
+        mRxLength[cableNumber] = 0;
     };
 
     void end()
@@ -133,17 +152,26 @@ public:
 	unsigned available()
 	{
         // consume mRxBuffer first, before getting a new packet
-        if (mRxLength > 0)
-            return mRxLength;
+        bool allCableAvailable = true; 
+        for (uint8_t i = 0; i < USB_MIDI_NUM_CABLES; i++) {
+            if (mRxLength[i] > 0) {
+                allCableAvailable = false; 
+                break; 
+            }
+                
+        }
 
-        mRxIndex = 0;
+        if(!allCableAvailable) {
+            return mRxLength[cableNumber];
+        }
         
         mPacket = MidiUSB.read();
         if (mPacket.header != 0) {
             auto cn  = GETCABLENUMBER(mPacket);
-            if (cn != cableNumber)
+            if (cn >= cableNumberTotal)
                 return 0;
- 
+
+            mRxIndex[cn] = 0; 
             auto cin = GETCIN(mPacket);
             auto len = cin2Len[cin][1];
             switch (len) {
@@ -169,9 +197,15 @@ public:
             }
         }
 
-        return mRxLength;
+        return mRxLength[cableNumber];
 	};
 };
+
+byte usbMidiTransport::mRxBuffer[USB_MIDI_NUM_CABLES][64] = {0};
+size_t usbMidiTransport::mRxLength[USB_MIDI_NUM_CABLES] = {0};
+size_t usbMidiTransport::mRxIndex[USB_MIDI_NUM_CABLES] = {0};
+uint8_t usbMidiTransport::cableNumberTotal = 0; 
+uint16_t usbMidiTransport::cableNumberMask = 0; 
 
 END_USBMIDI_NAMESPACE
 
