@@ -75,6 +75,9 @@ public:
 
 	void begin()
 	{
+#if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+        MidiUSB.begin();
+#endif
         mTxIndex = 0;
         mRxIndex[cableNumber] = 0;
         mRxLength[cableNumber] = 0;
