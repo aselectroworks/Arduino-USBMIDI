@@ -24,7 +24,11 @@ SOFTWARE.
 
 #include <MIDI.h>
 #if defined(ESP32) || defined(ARDUINO_ARCH_ESP32)
+#if defined(ESP32_USB_HOST)
+#include <MIDIUSBHOST_ESP32.h>
+#else
 #include <MIDIUSB_ESP32.h>
+#endif
 #else
 #include <MIDIUSB.h>
 #define USB_MIDI_NUM_CABLES 1
